@@ -1,4 +1,39 @@
 defmodule PhoenixChannelClient do
+  @moduledoc """
+  Phoenix Channels Client
+
+  ### Example
+  ```
+  {:ok, pid} = PhoenixChannelClient.start_link()
+
+  {:ok, socket} = PhoenixChannelClient.connect(pid,
+    host: "localhost",
+    path: "/socket/websocket",
+    params: %{token: "something"},
+    secure: false)
+
+  channel = PhoenixChannelClient.channel(socket, "room:public", %{name: "Ryo"})
+
+  case PhoenixChannelClient.join(channel) do
+    {:ok, %{message: message}} -> IO.puts(message)
+    {:error, %{reason: reason}} -> IO.puts(reason)
+    :timeout -> IO.puts("timeout")
+  end
+
+  case PhoenixChannelClient.push_and_receive(channel, "search", %{query: "Elixir"}, 100) do
+    {:ok, %{result: result}} -> IO.puts("#\{length(result)} items")
+    {:error, %{reason: reason}} -> IO.puts(reason)
+    :timeout -> IO.puts("timeout")
+  end
+
+  receive do
+    {"new_msg", message} -> IO.puts(message)
+  end
+
+  :ok = PhoenixChannelClient.leave(channel)
+  ```
+  """
+
   use GenServer
 
   defmodule Channel do
@@ -43,26 +78,24 @@ defmodule PhoenixChannelClient do
     GenServer.start(__MODULE__, :ok, opts)
   end
 
-  def init(_opts) do
-    initial_state = %{
-      ref: 0,
-      socket: nil,
-      recv_loop_pid: nil,
-      subscriptions: %{},
-      connection_address: nil,
-      connection_opts: nil
-    }
-    {:ok, initial_state}
-  end
-
   @doc """
   Connects to the specified websocket.
 
   ### Options
   * `:host`
-  * `:port`
-  * `:path`
-  * `:params`
+  * `:port` optional
+  * `:path` optional, "/" by default
+  * `:params` optional, %{} by default
+  * `:secure` optional, false by default
+
+  ### Example
+  ```
+  PhoenixChannelClient.connect(pid,
+    host: "localhost",
+    path: "/socket/websocket",
+    params: %{token: "something"},
+    secure: false)
+  ```
   """
   @spec connect(term, keyword) :: {:ok, socket} | connect_error
   def connect(name, opts) do
@@ -72,11 +105,17 @@ defmodule PhoenixChannelClient do
     end
   end
 
+  @doc """
+  Reconnects to the socket.
+  """
   @spec reconnect(socket) :: :ok | connect_error
   def reconnect(socket) do
     GenServer.call(socket.server_name, :reconnect)
   end
 
+  @doc """
+  Creates a channel struct.
+  """
   @spec channel(socket, String.t, map) :: channel
   def channel(socket, topic, params \\ %{}) do
     %Channel{
@@ -86,6 +125,21 @@ defmodule PhoenixChannelClient do
     }
   end
 
+  @doc """
+  Joins to the channel and subscribes messages.
+
+  ### Example
+  ```
+  case PhoenixChannelClient.join(channel) do
+    {:ok, %{message: message}} -> IO.puts(message)
+    {:error, %{reason: reason}} -> IO.puts(reason)
+    :timeout -> IO.puts("timeout")
+  end
+  receive do
+    {"new_msg", message} -> IO.puts(message)
+  end
+  ```
+  """
   @spec join(channel, number) :: result
   def join(channel, timeout \\ @default_timeout) do
     subscription = channel_subscription_key(channel)
@@ -102,6 +156,9 @@ defmodule PhoenixChannelClient do
     end
   end
 
+  @doc """
+  Leaves the channel.
+  """
   @spec leave(channel, number) :: send_result
   def leave(channel, timeout \\ @default_timeout) do
     subscription = channel_subscription_key(channel)
@@ -109,12 +166,35 @@ defmodule PhoenixChannelClient do
     push_and_receive(channel, @event_leave, %{}, timeout)
   end
 
+  @doc """
+  Pushes a message.
+
+  ### Example
+  ```
+  case PhoenixChannelClient.push(channel, "new_msg", %{text: "Hello"}, 100) do
+    :ok -> ()
+    {:error, term} -> IO.puts("failed")
+  end
+  ```
+  """
   @spec push(channel, String.t, map) :: send_result
   def push(channel, event, payload) do
     ref = GenServer.call(channel.socket.server_name, :make_ref)
     do_push(channel, event, payload, ref)
   end
 
+  @doc """
+  Pushes a message and receives a reply.
+
+  ### Example
+  ```
+  case PhoenixChannelClient.push_and_receive(channel, "search", %{query: "Elixir"}, 100) do
+    {:ok, %{result: result}} -> IO.puts("#\{length(result)} items")
+    {:error, %{reason: reason}} -> IO.puts(reason)
+    :timeout -> IO.puts("timeout")
+  end
+  ```
+  """
   @spec push_and_receive(channel, String.t, map, number) :: result
   def push_and_receive(channel, event, payload, timeout \\ @default_timeout) do
     ref = GenServer.call(channel.socket.server_name, :make_ref)
@@ -189,9 +269,6 @@ defmodule PhoenixChannelClient do
     end)
   end
 
-  defp recv_loop(socket) do
-  end
-
   defp do_connect(address, opts, state) do
     socket = state.socket
     if not is_nil(socket) do
@@ -214,6 +291,18 @@ defmodule PhoenixChannelClient do
   end
 
   # Callbacks
+
+  def init(_opts) do
+    initial_state = %{
+      ref: 0,
+      socket: nil,
+      recv_loop_pid: nil,
+      subscriptions: %{},
+      connection_address: nil,
+      connection_opts: nil
+    }
+    {:ok, initial_state}
+  end
 
   def handle_call({:connect, opts}, _from, state) do
     {host, opts} = Keyword.pop(opts, :host)

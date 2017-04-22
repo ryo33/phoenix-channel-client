@@ -1,19 +1,35 @@
 # PhoenixChannelClient
 
-**TODO: Add description**
+## Usage
+Add `{:phoenixchannelclient, "~> 0.1.0"}` to deps.
 
-## Installation
-
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `phoenix_channel_client` to your list of dependencies in `mix.exs`:
-
+## Example
 ```elixir
-def deps do
-  [{:phoenix_channel_client, "~> 0.1.0"}]
+{:ok, pid} = PhoenixChannelClient.start_link()
+
+{:ok, socket} = PhoenixChannelClient.connect(pid,
+  host: "localhost",
+  path: "/socket/websocket",
+  params: %{token: "something"},
+  secure: false)
+
+channel = PhoenixChannelClient.channel(socket, "room:public", %{name: "Ryo"})
+
+case PhoenixChannelClient.join(channel) do
+  {:ok, %{message: message}} -> IO.puts(message)
+  {:error, %{reason: reason}} -> IO.puts(reason)
+  :timeout -> IO.puts("timeout")
 end
+
+case PhoenixChannelClient.push_and_receive(channel, "search", %{query: "Elixir"}, 100) do
+  {:ok, %{result: result}} -> IO.puts("#\{length(result)} items")
+  {:error, %{reason: reason}} -> IO.puts(reason)
+  :timeout -> IO.puts("timeout")
+end
+
+receive do
+  {"new_msg", message} -> IO.puts(message)
+end
+
+:ok = PhoenixChannelClient.leave(channel)
 ```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/phoenix_channel_client](https://hexdocs.pm/phoenix_channel_client).
-
