@@ -64,7 +64,7 @@ defmodule PhoenixChannelClient do
   @default_timeout 5000
   @max_timeout 60000 # 1 minute
 
-  @phoenix_vsn Application.get_env(:phoenix_channel_client, PhoenixChannelClient)[:vsn]
+  @phoenix_vsn "1.0.0"
 
   @event_join "phx_join"
   @event_reply "phx_reply"
