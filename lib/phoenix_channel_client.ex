@@ -28,6 +28,8 @@ defmodule PhoenixChannelClient do
 
   receive do
     {"new_msg", message} -> IO.puts(message)
+    :close -> IO.puts("closed")
+    {:error, error} -> ()
   end
 
   :ok = PhoenixChannelClient.leave(channel)
@@ -128,6 +130,8 @@ defmodule PhoenixChannelClient do
   @doc """
   Joins to the channel and subscribes messages.
 
+  Receives `{event, payload}` or `:close`.
+
   ### Example
   ```
   case PhoenixChannelClient.join(channel) do
@@ -137,6 +141,8 @@ defmodule PhoenixChannelClient do
   end
   receive do
     {"new_msg", message} -> IO.puts(message)
+    :close -> IO.puts("closed")
+    {:error, error} -> ()
   end
   ```
   """
@@ -253,31 +259,12 @@ defmodule PhoenixChannelClient do
   defp channel_subscription_key(channel), do: "channel_#{channel.topic}"
   defp reply_subscription_key(ref), do: "reply_#{ref}"
 
-  defp spawn_recv_loop(socket) do
-    pid = self()
-    spawn(fn ->
-      for _ <- Stream.cycle([:ok]) do
-        case WebSocket.recv!(socket) do
-          {:text, data} ->
-            send pid, {:text, data}
-          {:ping, _} ->
-            WebSocket.send!(socket, {:pong, ""})
-          {:close, _, _} ->
-            send pid, :close
-        end
-      end
-    end)
-  end
-
   defp do_connect(address, opts, state) do
     socket = state.socket
     if not is_nil(socket) do
       WebSocket.close(socket)
     end
-    pid = state.recv_loop_pid
-    if not is_nil(pid) and Process.alive?(pid) do
-      Process.exit(pid, :kill)
-    end
+    ensure_loop_killed(state)
     case WebSocket.connect(address, opts) do
       {:ok, socket} ->
         pid = spawn_recv_loop(socket)
@@ -287,6 +274,33 @@ defmodule PhoenixChannelClient do
         {:reply, :ok, state}
       {:error, error} ->
         {:reply, {:error, error}, state}
+    end
+  end
+
+  @sleep_time_on_error 100
+  defp spawn_recv_loop(socket) do
+    pid = self()
+    spawn(fn ->
+      for _ <- Stream.cycle([:ok]) do
+        case WebSocket.recv(socket) do
+          {:ok, {:text, data}} ->
+            send pid, {:text, data}
+          {:ok, {:ping, _}} ->
+            WebSocket.send!(socket, {:pong, ""})
+          {:ok, {:close, _, _}} ->
+            send pid, :close
+          {:error, error} ->
+            send pid, {:error, error}
+            :timer.sleep(@sleep_time_on_error)
+        end
+      end
+    end)
+  end
+
+  def ensure_loop_killed(state) do
+    pid = state.recv_loop_pid
+    if not is_nil(pid) and Process.alive?(pid) do
+      Process.exit(pid, :kill)
     end
   end
 
@@ -380,6 +394,28 @@ defmodule PhoenixChannelClient do
     |> Flow.filter_map(filter, mapper)
     |> Flow.each(sender)
     |> Flow.run()
+    {:noreply, state}
+  end
+
+  def handle_info(:close, state) do
+    ensure_loop_killed(state)
+    sender = fn {pid, message} ->
+      send pid, message
+    end
+    Enum.map(state.subscriptions, fn {_key, %Subscription{pid: pid}} ->
+      spawn(fn ->
+        send pid, :close
+      end)
+    end)
+    {:noreply, state}
+  end
+
+  def handle_info({:error, error}, state) do
+    Enum.map(state.subscriptions, fn {_key, %Subscription{pid: pid}} ->
+      spawn(fn ->
+        send pid, {:error, error}
+      end)
+    end)
     {:noreply, state}
   end
 end
