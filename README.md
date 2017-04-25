@@ -29,6 +29,8 @@ end
 
 receive do
   {"new_msg", message} -> IO.puts(message)
+  :close -> IO.puts("closed")
+  {:error, error} -> ()
 end
 
 :ok = PhoenixChannelClient.leave(channel)
