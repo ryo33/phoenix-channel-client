@@ -2,7 +2,7 @@ defmodule PhoenixChannelClient.Mixfile do
   use Mix.Project
 
   def project do
-    [app: :phoenix_channel_client,
+    [app: :phoenixchannelclient,
      description: "Phoenix Channel Client",
      package: package(),
      version: "0.1.0",
