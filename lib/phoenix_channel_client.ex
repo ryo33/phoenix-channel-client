@@ -225,7 +225,7 @@ defmodule PhoenixChannelClient do
       end
     end)
     try do
-      result = Task.await(task, @max_timeout)
+      Task.await(task, @max_timeout)
     after
       unsubscribe(channel.socket.server_name, subscription)
     end
@@ -400,7 +400,7 @@ defmodule PhoenixChannelClient do
 
   def handle_info(:close, state) do
     ensure_loop_killed(state)
-    sender = fn {pid, message} ->
+    fn {pid, message} ->
       send pid, message
     end
     Enum.map(state.subscriptions, fn {_key, %Subscription{pid: pid}} ->
