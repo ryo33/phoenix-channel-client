@@ -151,7 +151,18 @@ defmodule PhoenixChannelClientTest do
     assert Process.alive?(pid)
   end
 
-  defp get_subscriptions, do: :sys.get_state(@name).subscriptions
+  test "close properly" do
+    {:ok, socket} = PhoenixChannelClient.connect(@name, @opts)
+    pid = get_recv_loop_pid()
+    socket = get_socket()
+    assert Process.alive?(pid)
+    assert Port.info(socket.socket) != nil
+    GenServer.stop(@name)
+    refute Process.alive?(pid)
+    refute Port.info(socket.socket) != nil
+  end
 
+  defp get_subscriptions, do: :sys.get_state(@name).subscriptions
   defp get_recv_loop_pid, do: :sys.get_state(@name).recv_loop_pid
+  defp get_socket, do: :sys.get_state(@name).socket
 end

@@ -280,7 +280,7 @@ defmodule PhoenixChannelClient do
   @sleep_time_on_error 100
   defp spawn_recv_loop(socket) do
     pid = self()
-    spawn(fn ->
+    spawn_link(fn ->
       for _ <- Stream.cycle([:ok]) do
         case WebSocket.recv(socket) do
           {:ok, {:text, data}} ->
@@ -299,7 +299,8 @@ defmodule PhoenixChannelClient do
 
   def ensure_loop_killed(state) do
     pid = state.recv_loop_pid
-    if not is_nil(pid) and Process.alive?(pid) do
+    if not is_nil(pid) do
+      Process.unlink(pid)
       Process.exit(pid, :kill)
     end
   end
@@ -403,7 +404,7 @@ defmodule PhoenixChannelClient do
       send pid, message
     end
     Enum.map(state.subscriptions, fn {_key, %Subscription{pid: pid}} ->
-      spawn(fn ->
+      spawn_link(fn ->
         send pid, :close
       end)
     end)
@@ -412,10 +413,19 @@ defmodule PhoenixChannelClient do
 
   def handle_info({:error, error}, state) do
     Enum.map(state.subscriptions, fn {_key, %Subscription{pid: pid}} ->
-      spawn(fn ->
+      spawn_link(fn ->
         send pid, {:error, error}
       end)
     end)
     {:noreply, state}
+  end
+
+  def terminate(reason, state) do
+    ensure_loop_killed(state)
+    socket = state.socket
+    if not is_nil(socket) do
+      WebSocket.abort(socket)
+    end
+    reason
   end
 end
