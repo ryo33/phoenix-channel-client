@@ -15,6 +15,18 @@ defmodule TestServer.UserChannel do
     {:ok, %{topic: topic, params: params}, socket}
   end
 
+  def join("timer", params, socket) do
+    :timer.send_after(1, {:timer, 1})
+    {:ok, socket}
+  end
+  def handle_info({:timer, count}, socket) do
+    if count < 3 do
+      :timer.send_after(1, {:timer, count+1})
+    end
+    push socket, "timer", %{count: count}
+    {:noreply, socket}
+  end
+
   def handle_in("reply_ok:" <> event, params, socket) do
     {:reply, {:ok, %{event: event, params: params}}, socket}
   end
