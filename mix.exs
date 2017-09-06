@@ -24,10 +24,10 @@ defmodule PhoenixChannelClient.Mixfile do
   end
 
   defp deps do
-    [{:socket, "~> 0.3.11"},
-     {:poison, "~> 2.0"},
-     {:flow, "~> 0.11"},
+    [{:socket, "~> 0.3"},
+     {:poison, "~> 3.1"},
+     {:flow, "~> 0.12"},
      {:test_server, path: "test_server", only: :test},
-     {:ex_doc, "~> 0.14", only: :dev, runtime: false}]
+     {:ex_doc, "~> 0.16", only: :dev, runtime: false}]
   end
 end
