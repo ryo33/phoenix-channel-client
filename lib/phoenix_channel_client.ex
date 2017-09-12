@@ -18,12 +18,14 @@ defmodule PhoenixChannelClient do
     {:ok, %{message: message}} -> IO.puts(message)
     {:error, %{reason: reason}} -> IO.puts(reason)
     :timeout -> IO.puts("timeout")
+    {:exception, error} -> raise error
   end
 
   case PhoenixChannelClient.push_and_receive(channel, "search", %{query: "Elixir"}, 100) do
     {:ok, %{result: result}} -> IO.puts("#\{length(result)} items")
     {:error, %{reason: reason}} -> IO.puts(reason)
     :timeout -> IO.puts("timeout")
+    {:exception, error} -> raise error
   end
 
   receive do
@@ -59,7 +61,8 @@ defmodule PhoenixChannelClient do
   @type ok_result :: {:ok, term}
   @type error_result :: {:error, term}
   @type timeout_result :: :timeout
-  @type result :: ok_result | error_result | timeout_result
+  @type exception_result :: {:error, term}
+  @type result :: ok_result | error_result | timeout_result | exception_result
   @type send_result :: :ok | {:error, term}
   @type connect_error :: {:error, term}
 
@@ -211,9 +214,9 @@ defmodule PhoenixChannelClient do
       end
       mapper = fn %{payload: payload} -> payload end
       subscribe(channel.socket.server_name, subscription, matcher, mapper)
-      try do
-        do_push(channel, event, payload, ref)
-        receive do
+      case do_push(channel, event, payload, ref) do
+        :ok ->
+          receive do
           payload ->
             case payload do
               %{"status" => "ok", "response" => response} ->
@@ -221,11 +224,10 @@ defmodule PhoenixChannelClient do
               %{"status" => "error", "response" => response} ->
                 {:error, response}
             end
-        after
-          timeout -> :timeout
-        end
-      rescue
-        e -> {:error, e}
+          after
+            timeout -> :timeout
+          end
+        {:error, error} -> {:exception, error}
       end
     end)
     try do
@@ -244,7 +246,7 @@ defmodule PhoenixChannelClient do
     }
     json = Poison.encode!(obj)
     socket = GenServer.call(channel.socket.server_name, :socket)
-    WebSocket.send!(socket, {:text, json})
+    WebSocket.send(socket, {:text, json})
   end
 
   defp subscribe(name, key, matcher, mapper) do
