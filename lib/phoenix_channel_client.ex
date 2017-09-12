@@ -211,17 +211,21 @@ defmodule PhoenixChannelClient do
       end
       mapper = fn %{payload: payload} -> payload end
       subscribe(channel.socket.server_name, subscription, matcher, mapper)
-      do_push(channel, event, payload, ref)
-      receive do
-        payload ->
-          case payload do
-            %{"status" => "ok", "response" => response} ->
-              {:ok, response}
-            %{"status" => "error", "response" => response} ->
-              {:error, response}
-          end
-      after
-        timeout -> :timeout
+      try do
+        do_push(channel, event, payload, ref)
+        receive do
+          payload ->
+            case payload do
+              %{"status" => "ok", "response" => response} ->
+                {:ok, response}
+              %{"status" => "error", "response" => response} ->
+                {:error, response}
+            end
+        after
+          timeout -> :timeout
+        end
+      rescue
+        e -> {:error, e}
       end
     end)
     try do
