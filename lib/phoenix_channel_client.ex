@@ -273,6 +273,7 @@ defmodule PhoenixChannelClient do
     ensure_loop_killed(state)
     case WebSocket.connect(address, opts) do
       {:ok, socket} ->
+        state = schedule_heartbeat(state)
         pid = spawn_recv_loop(socket)
         state = %{state |
           socket: socket,
@@ -281,6 +282,11 @@ defmodule PhoenixChannelClient do
       {:error, error} ->
         {:reply, {:error, error}, state}
     end
+  end
+
+  defp schedule_heartbeat(state) do
+    ref = Process.send_after(self(), :heartbeat, state.heartbeat_interval)
+    %{state | heartbeat_ref: ref}
   end
 
   @sleep_time_on_error 100
@@ -295,6 +301,8 @@ defmodule PhoenixChannelClient do
             WebSocket.send!(socket, {:pong, ""})
           {:ok, {:close, _, _}} ->
             send pid, :close
+          {:ok, {:pong, _}} ->
+            :noop
           {:error, error} ->
             send pid, {:error, error}
             :timer.sleep(@sleep_time_on_error)
@@ -304,6 +312,11 @@ defmodule PhoenixChannelClient do
   end
 
   def ensure_loop_killed(state) do
+    ref = state.heartbeat_ref
+    if not is_nil(ref) do
+      Process.cancel_timer(ref)
+    end
+
     pid = state.recv_loop_pid
     if not is_nil(pid) do
       Process.unlink(pid)
@@ -320,7 +333,9 @@ defmodule PhoenixChannelClient do
       recv_loop_pid: nil,
       subscriptions: %{},
       connection_address: nil,
-      connection_opts: nil
+      connection_opts: nil,
+      heartbeat_interval: nil,
+      heartbeat_ref: nil
     }
     {:ok, initial_state}
   end
@@ -330,6 +345,7 @@ defmodule PhoenixChannelClient do
     {port, opts} = Keyword.pop(opts, :port)
     {path, opts} = Keyword.pop(opts, :path, "/")
     {params, opts} = Keyword.pop(opts, :params, %{})
+    {heartbeat_interval, opts} = Keyword.pop(opts, :heartbeat_interval, 30_000)
     params = Map.put(params, :vsn, @phoenix_vsn) |> URI.encode_query()
     path = "#{path}?#{params}"
     opts = Keyword.put(opts, :path, path)
@@ -340,7 +356,8 @@ defmodule PhoenixChannelClient do
     end
     state = %{state |
       connection_address: address,
-      connection_opts: opts}
+      connection_opts: opts,
+      heartbeat_interval: heartbeat_interval}
     do_connect(address, opts, state)
   end
 
@@ -423,6 +440,13 @@ defmodule PhoenixChannelClient do
         send pid, {:error, error}
       end)
     end)
+    {:noreply, state}
+  end
+
+  def handle_info(:heartbeat, state) do
+    Elixir.Socket.Web.send!(state.socket, {:ping, Poison.encode!(%{topic: "phoenix", event: "heartbeat", payload: %{}})})
+
+    state = schedule_heartbeat(state)
     {:noreply, state}
   end
 

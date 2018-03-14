@@ -2,7 +2,8 @@ defmodule TestServer.UserSocket do
   use Phoenix.Socket
 
   channel "*", TestServer.UserChannel
-  transport :websocket, Phoenix.Transports.WebSocket
+  transport :websocket, Phoenix.Transports.WebSocket,
+    timeout: 1_000
 
   def connect(params, socket) do
     if params["authenticated"] === "true" do

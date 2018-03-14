@@ -14,7 +14,8 @@ Add `{:phoenixchannelclient, "~> 0.1.0"}` to deps.
   host: "localhost",
   path: "/socket/websocket",
   params: %{token: "something"},
-  secure: false)
+  secure: false,
+  heartbeat_interval: 30_000)
 
 channel = PhoenixChannelClient.channel(socket, "room:public", %{name: "Ryo"})
 

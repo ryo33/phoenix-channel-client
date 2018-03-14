@@ -11,7 +11,8 @@ defmodule PhoenixChannelClientTest do
     host: @host,
     port: @port,
     path: @path,
-    params: @params]
+    params: @params,
+    heartbeat_interval: 500]
 
   setup_all do
     IO.puts("Don't forget to run the test server!")
@@ -152,7 +153,7 @@ defmodule PhoenixChannelClientTest do
   end
 
   test "close properly" do
-    {:ok, socket} = PhoenixChannelClient.connect(@name, @opts)
+    {:ok, _socket} = PhoenixChannelClient.connect(@name, @opts)
     pid = get_recv_loop_pid()
     socket = get_socket()
     assert Process.alive?(pid)
@@ -160,6 +161,15 @@ defmodule PhoenixChannelClientTest do
     GenServer.stop(@name)
     refute Process.alive?(pid)
     refute Port.info(socket.socket) != nil
+  end
+
+  test "heartbeat" do
+    {:ok, socket} = PhoenixChannelClient.connect(@name, @opts)
+    channel = PhoenixChannelClient.channel(socket, "ok:topic", %{})
+
+    :timer.sleep(2_000)
+
+    assert PhoenixChannelClient.join(channel) == {:ok, %{"topic" => "topic", "params" => %{}}}
   end
 
   defp get_subscriptions, do: :sys.get_state(@name).subscriptions
