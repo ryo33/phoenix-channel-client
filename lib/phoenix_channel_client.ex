@@ -423,9 +423,6 @@ defmodule PhoenixChannelClient do
 
   def handle_info(:close, state) do
     ensure_loop_killed(state)
-    fn {pid, message} ->
-      send pid, message
-    end
     Enum.map(state.subscriptions, fn {_key, %Subscription{pid: pid}} ->
       spawn_link(fn ->
         send pid, :close
